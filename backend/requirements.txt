@@ -1,0 +1,5 @@
+# Python 3.12+ compatible dependencies
+# Forward-compatible with Python 3.14+
+boto3>=1.34.0
+botocore>=1.34.0
+

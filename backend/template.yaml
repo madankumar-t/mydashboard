@@ -1,0 +1,214 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Enterprise AWS Inventory Dashboard - Multi-Account, Multi-Region
+
+########################################
+# PARAMETERS
+########################################
+Parameters:
+  ExternalId:
+    Type: String
+    Description: External ID for AssumeRole (security best practice)
+    Default: ""
+
+  InventoryRoleName:
+    Type: String
+    Description: Name of the IAM role to assume in member accounts
+    Default: InventoryReadRole
+
+  ExistingCognitoUserPoolId:
+    Type: String
+    Description: Existing Cognito User Pool ID (e.g., us-east-1_XXXXXXXXX)
+
+  ExistingCognitoClientId:
+    Type: String
+    Description: Existing Cognito App Client ID
+
+  CognitoRegion:
+    Type: String
+    Description: AWS Region where Cognito User Pool is located
+    Default: us-east-1
+
+########################################
+# GLOBALS (FIXED)
+########################################
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 300
+    MemorySize: 512
+    Environment:
+      Variables:
+        EXTERNAL_ID: !Ref ExternalId
+        INVENTORY_ROLE_NAME: !Ref InventoryRoleName
+        ROLE_SESSION_NAME: InventoryDashboardSession
+
+########################################
+# RESOURCES
+########################################
+Resources:
+
+  ########################################
+  # API GATEWAY
+  ########################################
+  InventoryApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,OPTIONS,POST'"
+        AllowHeaders: "'Authorization,Content-Type'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuth
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          CognitoAuth:
+            UserPoolArn: !Sub arn:aws:cognito-idp:${CognitoRegion}:${AWS::AccountId}:userpool/${ExistingCognitoUserPoolId}
+            Identity:
+              Header: Authorization
+              ReauthorizeEvery: 3600
+
+  ########################################
+  # LAMBDA FUNCTION
+  ########################################
+  InventoryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.lambda_handler
+      CodeUri: src/
+      Layers:
+        - !Ref PythonDependenciesLayer
+
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ec2:Describe*
+                - s3:ListAllMyBuckets
+                - s3:GetBucket*
+                - rds:Describe*
+                - dynamodb:ListTables
+                - dynamodb:DescribeTable
+                - iam:ListRoles
+                - iam:GetRole*
+                - eks:List*
+                - eks:Describe*
+                - ecs:List*
+                - ecs:Describe*
+                - organizations:List*
+                - organizations:Describe*
+                - sts:AssumeRole
+                - sts:GetCallerIdentity
+              Resource: "*"
+
+      Events:
+        InventoryApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /inventory
+            Method: ANY
+            Auth:
+              Authorizer: CognitoAuth
+
+        InventoryAccountsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /accounts
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuth
+
+        InventorySummaryApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /inventory/summary
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuth
+
+        InventoryExportApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /inventory/export
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuth
+
+        InventoryDetailsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /inventory/details
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuth
+
+  ########################################
+  # LAMBDA LAYER
+  ########################################
+  PythonDependenciesLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: InventoryDependencies
+      Description: Python dependencies for inventory function
+      ContentUri: layer/
+      CompatibleRuntimes:
+        - python3.12
+      RetentionPolicy: Retain
+
+  ########################################
+  # API GATEWAY CORS RESPONSES
+  ########################################
+  ApiGatewayDefault4xx:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref InventoryApi
+      ResponseType: DEFAULT_4XX
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Authorization,Content-Type'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+
+  ApiGatewayDefault5xx:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref InventoryApi
+      ResponseType: DEFAULT_5XX
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Authorization,Content-Type'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
+
+  ########################################
+  # CLOUDWATCH LOG GROUP
+  ########################################
+  InventoryLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${InventoryFunction}
+      RetentionInDays: 30
+
+########################################
+# OUTPUTS
+########################################
+Outputs:
+  ApiUrl:
+    Description: Inventory API base URL
+    Value: !Sub https://${InventoryApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref ExistingCognitoUserPoolId
+
+  ClientId:
+    Description: Cognito App Client ID
+    Value: !Ref ExistingCognitoClientId
+
+  CognitoUserPoolArn:
+    Description: Cognito User Pool ARN
+    Value: !Sub arn:aws:cognito-idp:${CognitoRegion}:${AWS::AccountId}:userpool/${ExistingCognitoUserPoolId}
