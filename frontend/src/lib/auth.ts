@@ -116,13 +116,24 @@ export function loginWithHostedUI(): void {
   const redirectUri = `${window.location.origin}/auth/callback`;
   console.log('🔐 Redirect URI:', redirectUri);
 
-  const cognitoLoginUrl = `https://${cognitoDomain}.auth.${region}.amazoncognito.com/login?` +
+  // Get SAML provider name from environment (optional, for direct SAML redirect)
+  // If NEXT_PUBLIC_SAML_PROVIDER_NAME is set, redirect directly to SAML
+  // Otherwise, use /login which will show identity provider selection
+  const samlProviderName = process.env.NEXT_PUBLIC_SAML_PROVIDER_NAME || '';
+  const loginEndpoint = samlProviderName 
+    ? `/oauth2/authorize?identity_provider=${encodeURIComponent(samlProviderName)}&`
+    : '/login?';
+
+  const cognitoLoginUrl = `https://${cognitoDomain}.auth.${region}.amazoncognito.com${loginEndpoint}` +
     `client_id=${clientId}&` +
     `response_type=code&` +
     `scope=email+openid+profile&` +
     `redirect_uri=${encodeURIComponent(redirectUri)}`;
 
   console.log('🔐 Redirecting to Cognito:', cognitoLoginUrl.substring(0, 100) + '...');
+  if (samlProviderName) {
+    console.log('🔐 Direct SAML redirect to provider:', samlProviderName);
+  }
   window.location.href = cognitoLoginUrl;
 }
 
