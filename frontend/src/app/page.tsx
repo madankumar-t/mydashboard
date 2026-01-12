@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { getStoredSession, loginWithHostedUI } from '@/lib/auth'
+import { getStoredSession, loginWithHostedUI, handleAuthCallback } from '@/lib/auth'
 import { Box, CircularProgress, Typography, Alert } from '@mui/material'
 
 export default function Home() {
@@ -50,22 +50,62 @@ export default function Home() {
     console.log('🔄 Current path:', window.location.pathname);
     console.log('🔄 Is callback page?', window.location.pathname.includes('/auth/callback'));
     
-    // Don't redirect if we're already on callback page (avoid loop)
-    // FALLBACK: If callback component isn't loading (routing issue), handle callback here
+    // FALLBACK: Handle callback if callback component isn't mounting (routing issue)
+    // This happens when Next.js client-side routing doesn't recognize /auth/callback
     if (window.location.pathname.includes('/auth/callback')) {
       console.log('⏸️ On callback page - checking if callback should be handled here');
       
       // Check if we have a code parameter
       const urlParams = new URLSearchParams(window.location.search)
       const code = urlParams.get('code')
+      const errorParam = urlParams.get('error')
+      
+      if (errorParam) {
+        console.error('❌ Auth Error in callback:', errorParam);
+        setError(`Authentication error: ${urlParams.get('error_description') || errorParam}`);
+        return
+      }
       
       if (code) {
-        console.log('⚠️ Callback route not loading, but code present - this is a routing issue');
-        console.log('⚠️ Callback component should handle this, but it\'s not mounting');
-        console.log('⚠️ Check: 1) Route exists in build, 2) CloudFront serves it correctly');
-        // Don't handle here - this indicates a routing problem
-        // The callback component should be rendering
-        return
+        console.log('⚠️ Callback component not mounting - handling callback as fallback');
+        console.log('🔄 Processing callback with code:', code.substring(0, 20) + '...');
+        
+        // Handle the callback here as fallback
+        handleAuthCallback(code)
+          .then((session) => {
+            console.log('✅ Token exchange successful! (fallback handler)');
+            console.log('✅ Username:', session.username);
+            
+            // Store session
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('aws-inventory-session', JSON.stringify(session))
+                console.log('✅ Session stored in localStorage');
+                
+                // Verify session was stored
+                const verifySession = localStorage.getItem('aws-inventory-session')
+                if (!verifySession) {
+                  throw new Error('Failed to store session in localStorage')
+                }
+                console.log('✅ Session verified, redirecting to dashboard...');
+                
+                // Redirect to dashboard
+                setTimeout(() => {
+                  window.location.href = '/dashboard'
+                }, 500)
+              } catch (storageError) {
+                console.error('❌ Failed to store session:', storageError)
+                setError('Failed to store authentication session. Please check browser settings.')
+              }
+            }
+          })
+          .catch((err: unknown) => {
+            console.error('❌ Token exchange failed (fallback handler):', err)
+            const errorMessage = err instanceof Error ? err.message : 'Failed to authenticate. Please try again.'
+            setError(errorMessage)
+          })
+        
+        return // Don't redirect to Cognito
       }
       
       // No code, just waiting
