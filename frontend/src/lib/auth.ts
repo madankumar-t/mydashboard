@@ -176,6 +176,13 @@ export async function handleAuthCallback(code: string): Promise<AuthSession> {
   });
 
   console.log('🔄 Sending token exchange request...');
+  console.log('🔄 Request body (sanitized):', {
+    grant_type: 'authorization_code',
+    client_id: clientId.substring(0, 10) + '...',
+    code: code.substring(0, 10) + '...',
+    redirect_uri: redirectUri
+  });
+  
   const response = await fetch(tokenUrl, {
     method: 'POST',
     headers: {
@@ -185,6 +192,7 @@ export async function handleAuthCallback(code: string): Promise<AuthSession> {
   });
 
   console.log('📡 Token response status:', response.status, response.statusText);
+  console.log('📡 Token response headers:', Object.fromEntries(response.headers.entries()));
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));

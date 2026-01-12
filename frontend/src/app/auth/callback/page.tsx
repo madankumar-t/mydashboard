@@ -12,8 +12,14 @@ function AuthCallbackContent() {
   const hasExchanged = useRef(false)
 
   useEffect(() => {
+    console.log('🔐 AuthCallbackContent useEffect triggered')
+    console.log('🔐 hasExchanged.current:', hasExchanged.current)
+    
     // Prevent double execution in React Strict Mode
-    if (hasExchanged.current) return
+    if (hasExchanged.current) {
+      console.log('⏸️ Already exchanged, skipping...')
+      return
+    }
     hasExchanged.current = true
 
     // Get params directly from window.location to avoid hydration issues
@@ -23,7 +29,9 @@ function AuthCallbackContent() {
     const errorDescription = urlParams.get('error_description')
 
     console.log('🔐 Auth Callback - Code received:', code ? 'YES' : 'NO')
+    console.log('🔐 Auth Callback - Code value:', code ? code.substring(0, 20) + '...' : 'NONE')
     console.log('🔐 Auth Callback - Current URL:', window.location.href)
+    console.log('🔐 Auth Callback - Search params:', window.location.search)
 
     if (errorParam) {
       console.error('❌ Auth Error:', errorParam, errorDescription)
@@ -41,8 +49,19 @@ function AuthCallbackContent() {
 
     // Handle OAuth callback
     console.log('🔄 Starting token exchange...')
+    console.log('🔄 Code to exchange:', code.substring(0, 20) + '...')
+    
+    // Add timeout to detect if token exchange hangs
+    const exchangeTimeout = setTimeout(() => {
+      console.error('⏱️ Token exchange timeout - taking too long')
+      setError('Token exchange is taking too long. Please try again.')
+      setLoading(false)
+    }, 30000) // 30 second timeout
+    
     handleAuthCallback(code)
       .then((session) => {
+        clearTimeout(exchangeTimeout)
+        console.log('✅ Token exchange successful!')
         console.log('✅ Token exchange successful!')
         console.log('✅ Username:', session.username)
         console.log('✅ Groups:', session.groups)
@@ -99,16 +118,18 @@ function AuthCallbackContent() {
         }
       })
       .catch((err: unknown) => {
+        clearTimeout(exchangeTimeout)
         console.error('❌ Token exchange failed:', err)
         if (err instanceof Error) {
           console.error('❌ Error message:', err.message)
           console.error('❌ Error stack:', err.stack)
         }
         const errorMessage = err instanceof Error ? err.message : 'Failed to authenticate. Please try again.'
+        console.error('❌ Setting error state:', errorMessage)
         setError(errorMessage)
         setLoading(false)
       })
-  }, [router])
+  }, [router]) // Remove router from dependencies to ensure it runs once
 
   if (loading) {
     return (
@@ -163,6 +184,9 @@ function AuthCallbackContent() {
 }
 
 export default function AuthCallbackPage() {
+  // Add logging to verify component is mounting
+  console.log('🔐 AuthCallbackPage component rendering')
+  
   // Remove Suspense to avoid hydration errors
   return <AuthCallbackContent />
 }

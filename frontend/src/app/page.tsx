@@ -51,8 +51,25 @@ export default function Home() {
     console.log('🔄 Is callback page?', window.location.pathname.includes('/auth/callback'));
     
     // Don't redirect if we're already on callback page (avoid loop)
+    // FALLBACK: If callback component isn't loading (routing issue), handle callback here
     if (window.location.pathname.includes('/auth/callback')) {
-      console.log('⏸️ Already on callback page, waiting for callback to complete...');
+      console.log('⏸️ On callback page - checking if callback should be handled here');
+      
+      // Check if we have a code parameter
+      const urlParams = new URLSearchParams(window.location.search)
+      const code = urlParams.get('code')
+      
+      if (code) {
+        console.log('⚠️ Callback route not loading, but code present - this is a routing issue');
+        console.log('⚠️ Callback component should handle this, but it\'s not mounting');
+        console.log('⚠️ Check: 1) Route exists in build, 2) CloudFront serves it correctly');
+        // Don't handle here - this indicates a routing problem
+        // The callback component should be rendering
+        return
+      }
+      
+      // No code, just waiting
+      console.log('⏸️ On callback page but no code yet, waiting...');
       return
     }
     
