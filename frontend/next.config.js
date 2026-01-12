@@ -9,6 +9,17 @@ const nextConfig = {
   },
   // Trailing slash for S3 compatibility
   trailingSlash: true,
+  // Performance optimizations
+  swcMinify: true, // Use SWC minifier (faster and smaller bundles)
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production' ? {
+      exclude: ['error', 'warn'], // Keep errors and warnings
+    } : false,
+  },
+  // Optimize bundle size
+  experimental: {
+    optimizeCss: true, // Optimize CSS
+  },
   // Skip type checking during build (faster builds)
   typescript: {
     ignoreBuildErrors: false

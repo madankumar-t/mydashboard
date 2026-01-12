@@ -39,10 +39,14 @@ export default function SummaryCards({ service, accounts, regions }: SummaryCard
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
+  // Memoize accounts and regions to prevent unnecessary re-renders
+  const accountsKey = useMemo(() => accounts?.join(',') || '', [accounts])
+  const regionsKey = useMemo(() => regions?.join(',') || '', [regions])
+
   useEffect(() => {
     loadSummary()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [service, accounts, regions])
+  }, [service, accountsKey, regionsKey])
 
   const loadSummary = async () => {
     setLoading(true)

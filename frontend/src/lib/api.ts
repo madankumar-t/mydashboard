@@ -18,6 +18,78 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
 const RETRYABLE_STATUS_CODES = [408, 429, 500, 502, 503, 504];
 
+// Cache configuration
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_MAX_SIZE = 100; // Maximum number of cached responses
+
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+  key: string;
+}
+
+class ResponseCache {
+  private cache: Map<string, CacheEntry> = new Map();
+
+  private generateKey(url: string, params: any): string {
+    const sortedParams = Object.keys(params)
+      .sort()
+      .map(key => `${key}=${params[key]}`)
+      .join('&');
+    return `${url}?${sortedParams}`;
+  }
+
+  get(url: string, params: any): any | null {
+    const key = this.generateKey(url, params);
+    const entry = this.cache.get(key);
+
+    if (!entry) return null;
+
+    // Check if cache is expired
+    if (Date.now() - entry.timestamp > CACHE_TTL) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return entry.data;
+  }
+
+  set(url: string, params: any, data: any): void {
+    const key = this.generateKey(url, params);
+
+    // Remove oldest entry if cache is full
+    if (this.cache.size >= CACHE_MAX_SIZE) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      key,
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  invalidate(pattern?: string): void {
+    if (!pattern) {
+      this.clear();
+      return;
+    }
+
+    for (const [key] of this.cache) {
+      if (key.includes(pattern)) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+const responseCache = new ResponseCache();
+
 // Custom error class for better error handling
 export class APIError extends Error {
   constructor(
@@ -208,7 +280,7 @@ class InventoryAPI {
   }
 
   /**
-   * Get inventory for a service
+   * Get inventory for a service (with caching)
    */
   async getInventory<T extends AWSResource = AWSResource>(
     service: ServiceType,
@@ -220,6 +292,7 @@ class InventoryAPI {
       regions?: string[];
       accountId?: string;
       region?: string;
+      useCache?: boolean; // Allow disabling cache for real-time data
     } = {}
   ): Promise<InventoryResponse<T>> {
     const params: Record<string, string> = {
@@ -248,8 +321,20 @@ class InventoryAPI {
       params.region = options.region;
     }
 
+    // Check cache first (unless disabled)
+    if (options.useCache !== false) {
+      const cached = responseCache.get('/inventory', params);
+      if (cached) {
+        return cached as InventoryResponse<T>;
+      }
+    }
+
     return this.retryRequest(async () => {
       const response = await this.client.get<InventoryResponse<T>>('/inventory', { params });
+      // Cache the response
+      if (options.useCache !== false) {
+        responseCache.set('/inventory', params, response.data);
+      }
       return response.data;
     });
   }
@@ -364,12 +449,13 @@ class InventoryAPI {
   }
 
   /**
-   * Get summary statistics
+   * Get summary statistics (with caching)
    */
   async getSummary(
     service?: ServiceType,
     accounts?: string[],
-    regions?: string[]
+    regions?: string[],
+    useCache: boolean = true
   ): Promise<{
     total: number;
     running?: number;
@@ -391,10 +477,29 @@ class InventoryAPI {
       params.regions = regions.join(',');
     }
 
+    // Check cache first
+    if (useCache) {
+      const cached = responseCache.get('/inventory/summary', params);
+      if (cached) {
+        return cached;
+      }
+    }
+
     return this.retryRequest(async () => {
       const response = await this.client.get('/inventory/summary', { params });
+      // Cache the response
+      if (useCache) {
+        responseCache.set('/inventory/summary', params, response.data);
+      }
       return response.data;
     });
+  }
+
+  /**
+   * Clear API cache (useful for refreshing data)
+   */
+  clearCache(pattern?: string): void {
+    responseCache.invalidate(pattern);
   }
 }
 

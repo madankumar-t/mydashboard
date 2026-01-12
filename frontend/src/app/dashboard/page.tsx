@@ -65,17 +65,19 @@ function DashboardContent() {
   const [availableAccounts, setAvailableAccounts] = useState<Array<{ accountId: string; accountName: string }>>([])
   const [loadingAccounts, setLoadingAccounts] = useState(false)
   const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(false)
   const [selectedResource, setSelectedResource] = useState<any>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // Load available accounts on mount
+  // Debounce search input to avoid excessive API calls (500ms delay)
+  const debouncedSearch = useDebounce(search, 500)
+
+  // Load available accounts on mount (memoized to prevent re-fetching)
   useEffect(() => {
     loadAccounts()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const loadAccounts = async () => {
+  const loadAccounts = useCallback(async () => {
     setLoadingAccounts(true)
     try {
         const accounts = await api.getAccounts()
@@ -88,29 +90,10 @@ function DashboardContent() {
     } finally {
       setLoadingAccounts(false)
     }
-  }
+  }, [])
 
-  useEffect(() => {
-    loadInventory()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [service, selectedAccounts, selectedRegions, search, page])
-
-  const loadInventory = async () => {
-    setLoading(true)
-    try {
-      await api.getInventory(service, {
-        page,
-        size: 50,
-        search: search || undefined,
-        accounts: selectedAccounts.length > 0 ? selectedAccounts : undefined,
-        regions: selectedRegions.length > 0 ? selectedRegions : undefined,
-      })
-    } catch (error) {
-      console.error('Failed to load inventory:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  // REMOVED: Duplicate loadInventory - InventoryTable handles this
+  // This was causing duplicate API calls
 
   const handleResourceClick = (resource: any) => {
     setSelectedResource(resource)
@@ -323,19 +306,13 @@ function DashboardContent() {
         <Grid item xs={12}>
           <Card>
             <CardContent>
-              {loading ? (
-                <Box display="flex" justifyContent="center" p={4}>
-                  <CircularProgress />
-                </Box>
-              ) : (
-                <InventoryTable
-                  service={service}
-                  onResourceClick={handleResourceClick}
-                  search={search}
-                  accounts={selectedAccounts}
-                  regions={selectedRegions}
-                />
-              )}
+              <InventoryTable
+                service={service}
+                onResourceClick={handleResourceClick}
+                search={debouncedSearch}
+                accounts={selectedAccounts}
+                regions={selectedRegions}
+              />
             </CardContent>
           </Card>
         </Grid>
