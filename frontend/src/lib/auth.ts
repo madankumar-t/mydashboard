@@ -113,8 +113,10 @@ export function loginWithHostedUI(): void {
     throw new Error('loginWithHostedUI can only be called in the browser');
   }
 
-  const redirectUri = `${window.location.origin}/auth/callback`;
-  console.log('🔐 Redirect URI:', redirectUri);
+  // Normalize redirect URI to ensure exact match (no trailing slash)
+  // This is critical - redirect_uri must match EXACTLY between login and token exchange
+  const redirectUri = `${window.location.origin}/auth/callback`.replace(/\/$/, '');
+  console.log('🔐 Redirect URI (normalized):', redirectUri);
 
   // Get SAML provider name from environment (optional, for direct SAML redirect)
   // If NEXT_PUBLIC_SAML_PROVIDER_NAME is set, redirect directly to SAML
@@ -152,14 +154,16 @@ export async function handleAuthCallback(code: string): Promise<AuthSession> {
 
   // In production, this should be handled server-side for security
   // For now, we'll use the client-side flow
+  // CRITICAL: redirect_uri must match EXACTLY what was used in login
   const redirectUri = typeof window !== 'undefined'
-    ? `${window.location.origin}/auth/callback`
+    ? `${window.location.origin}/auth/callback`.replace(/\/$/, '')  // Normalize - no trailing slash
     : '';
 
   console.log('🔐 Token exchange parameters:');
   console.log('  - Token URL:', `https://${cognitoDomain}.auth.${region}.amazoncognito.com/oauth2/token`);
   console.log('  - Client ID:', clientId);
   console.log('  - Redirect URI:', redirectUri);
+  console.log('  - Redirect URI must match login redirect_uri EXACTLY');
 
   // Exchange authorization code for tokens
   const tokenUrl = `https://${cognitoDomain}.auth.${region}.amazoncognito.com/oauth2/token`;

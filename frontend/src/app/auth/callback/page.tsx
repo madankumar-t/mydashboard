@@ -49,15 +49,38 @@ function AuthCallbackContent() {
         // Store session
         if (typeof window !== 'undefined') {
           try {
+            // Store in localStorage (required for static Next.js apps)
             localStorage.setItem('aws-inventory-session', JSON.stringify(session))
             console.log('✅ Session stored in localStorage')
             
-            // Verify session was stored
+            // Verify session was stored (critical check)
             const verifySession = localStorage.getItem('aws-inventory-session')
             if (!verifySession) {
-              throw new Error('Failed to store session in localStorage')
+              throw new Error('Failed to store session in localStorage - localStorage may be blocked')
             }
-            console.log('✅ Session verified in localStorage')
+            
+            // Parse and verify session structure
+            const parsedSession = JSON.parse(verifySession)
+            if (!parsedSession.idToken || !parsedSession.expiresAt) {
+              throw new Error('Session stored but missing required fields')
+            }
+            
+            console.log('✅ Session verified in localStorage:', {
+              hasIdToken: !!parsedSession.idToken,
+              hasAccessToken: !!parsedSession.accessToken,
+              expiresAt: new Date(parsedSession.expiresAt).toISOString(),
+              username: parsedSession.username
+            })
+            
+            // Also verify localStorage is working
+            try {
+              localStorage.setItem('__test__', 'test')
+              localStorage.removeItem('__test__')
+              console.log('✅ localStorage is functional')
+            } catch (storageTestError) {
+              console.error('❌ localStorage test failed:', storageTestError)
+              throw new Error('localStorage is not available or blocked by browser')
+            }
             
             // Use longer delay to ensure session is fully written and dashboard can read it
             // Also use window.location for a hard redirect to avoid race conditions

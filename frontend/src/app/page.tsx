@@ -20,21 +20,42 @@ export default function Home() {
     console.log('🏠 Origin:', typeof window !== 'undefined' ? window.location.origin : 'N/A');
 
     // Check for existing session
+    // CRITICAL: Only check once, don't redirect immediately to avoid loops
     const session = getStoredSession()
     console.log('🏠 Session check:', session ? 'Found' : 'Not found');
     
-    // Add 5 minute buffer before expiration
+    if (session) {
+      console.log('🏠 Session details:', {
+        username: session.username,
+        expiresAt: new Date(session.expiresAt).toISOString(),
+        now: new Date().toISOString(),
+        expiresIn: Math.round((session.expiresAt - Date.now()) / 1000 / 60) + ' minutes'
+      })
+    }
+    
+    // Add 5 minute buffer before expiration to avoid edge cases
     const expirationBuffer = 5 * 60 * 1000 // 5 minutes in milliseconds
     if (session && session.expiresAt && session.expiresAt > Date.now() + expirationBuffer) {
       // User is already authenticated, redirect to dashboard
       console.log('✅ Valid session found, redirecting to dashboard');
-      router.push('/dashboard')
+      // Use replace instead of push to avoid adding to history
+      router.replace('/dashboard')
       return
     }
 
     // No valid session - automatically redirect to Cognito
-    // Small delay to ensure component is mounted
+    // IMPORTANT: Only redirect if we're sure there's no session
+    // Add delay to prevent immediate redirect loops
     console.log('🔄 No valid session, redirecting to Cognito...');
+    console.log('🔄 Current path:', window.location.pathname);
+    console.log('🔄 Is callback page?', window.location.pathname.includes('/auth/callback'));
+    
+    // Don't redirect if we're already on callback page (avoid loop)
+    if (window.location.pathname.includes('/auth/callback')) {
+      console.log('⏸️ Already on callback page, waiting for callback to complete...');
+      return
+    }
+    
     const redirectTimer = setTimeout(() => {
       try {
         loginWithHostedUI()
