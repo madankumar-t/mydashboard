@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
-import useDebounce from '@/hooks/useDebounce'
+import { useDebounce } from '@/hooks/useDebounce'
 import {
   Box,
   Grid,
@@ -137,8 +137,8 @@ function DashboardContent() {
                       multiple
                       value={selectedAccounts}
                       onChange={(e) => {
-                        const value = typeof e.target.value === 'string' 
-                          ? e.target.value.split(',') 
+                        const value = typeof e.target.value === 'string'
+                          ? e.target.value.split(',')
                           : e.target.value
                         setSelectedAccounts(value as string[])
                       }}
@@ -154,11 +154,11 @@ function DashboardContent() {
                             return account?.accountName || account?.accountId || id
                           })
                           .slice(0, 2) // Show first 2
-                        
+
                         const displayText = selectedAccountsList.join(', ')
                         const remaining = selected.length - selectedAccountsList.length
                         return (
-                          <Typography variant="body2" sx={{ 
+                          <Typography variant="body2" sx={{
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
@@ -202,8 +202,8 @@ function DashboardContent() {
                       multiple
                       value={selectedRegions}
                       onChange={(e) => {
-                        const value = typeof e.target.value === 'string' 
-                          ? e.target.value.split(',') 
+                        const value = typeof e.target.value === 'string'
+                          ? e.target.value.split(',')
                           : e.target.value
                         setSelectedRegions(value as string[])
                       }}
@@ -217,7 +217,7 @@ function DashboardContent() {
                         const displayText = selectedRegionsList.join(', ')
                         const remaining = selected.length - selectedRegionsList.length
                         return (
-                          <Typography variant="body2" sx={{ 
+                          <Typography variant="body2" sx={{
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap'
