@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, Suspense, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
+import useDebounce from '@/hooks/useDebounce'
 import {
   Box,
   Grid,
@@ -116,7 +117,6 @@ function DashboardContent() {
                       label="Service"
                       onChange={(e) => {
                         setService(e.target.value as ServiceType)
-                        setPage(1)
                       }}
                     >
                       {SERVICES.map((s) => (
@@ -141,7 +141,6 @@ function DashboardContent() {
                           ? e.target.value.split(',') 
                           : e.target.value
                         setSelectedAccounts(value as string[])
-                        setPage(1)
                       }}
                       input={<OutlinedInput label="Accounts" />}
                       renderValue={(selected) => {
@@ -207,7 +206,6 @@ function DashboardContent() {
                           ? e.target.value.split(',') 
                           : e.target.value
                         setSelectedRegions(value as string[])
-                        setPage(1)
                       }}
                       input={<OutlinedInput label="Regions" />}
                       renderValue={(selected) => {
@@ -246,7 +244,6 @@ function DashboardContent() {
                     value={search}
                     onChange={(e) => {
                       setSearch(e.target.value)
-                      setPage(1)
                     }}
                     placeholder="Search resources..."
                   />
