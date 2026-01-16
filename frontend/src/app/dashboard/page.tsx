@@ -2,7 +2,6 @@
 
 import { useState, useEffect, Suspense, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { useDebounce } from '@/hooks/useDebounce'
 import {
   Box,
@@ -15,8 +14,6 @@ import {
   FormControl,
   InputLabel,
   TextField,
-  Chip,
-  Button,
   CircularProgress,
   OutlinedInput,
   Checkbox,
@@ -25,11 +22,10 @@ import {
 import {
   Cloud,
   Storage,
-  Dataset, // ✅ CHANGED: replaced Database with Dataset
+  Dataset,
   Security,
   NetworkCheck,
   Apps,
-  Settings,
 } from '@mui/icons-material'
 import { ServiceType } from '@/types'
 import { api } from '@/lib/api'
@@ -40,24 +36,24 @@ import ResourceDetailDrawer from '@/components/ResourceDetailDrawer'
 const SERVICES: Array<{ value: ServiceType; label: string; icon: React.ReactNode }> = [
   { value: 'ec2', label: 'EC2 Instances', icon: <Cloud /> },
   { value: 's3', label: 'S3 Buckets', icon: <Storage /> },
-  { value: 'rds', label: 'RDS Instances', icon: <Dataset /> },       // ✅ CHANGED
-  { value: 'dynamodb', label: 'DynamoDB Tables', icon: <Dataset /> }, // ✅ CHANGED
+  { value: 'rds', label: 'RDS Instances', icon: <Dataset /> },
+  { value: 'dynamodb', label: 'DynamoDB Tables', icon: <Dataset /> },
   { value: 'iam', label: 'IAM Roles', icon: <Security /> },
   { value: 'vpc', label: 'VPCs', icon: <NetworkCheck /> },
   { value: 'eks', label: 'EKS Clusters', icon: <Apps /> },
   { value: 'ecs', label: 'ECS Clusters', icon: <Apps /> },
 ]
 
-// AWS Regions list (matching backend)
 const AWS_REGIONS = [
   'us-east-1', 'us-east-2', 'us-west-1', 'us-west-2',
   'eu-west-1', 'eu-west-2', 'eu-west-3', 'eu-central-1',
   'ap-southeast-1', 'ap-southeast-2', 'ap-northeast-1', 'ap-northeast-2',
-  'ap-south-1', 'ca-central-1', 'sa-east-1'
+  'ap-south-1', 'ca-central-1', 'sa-east-1',
 ]
 
 function DashboardContent() {
   const searchParams = useSearchParams()
+
   const [service, setService] = useState<ServiceType>(
     (searchParams.get('service') as ServiceType) || 'ec2'
   )
@@ -69,251 +65,166 @@ function DashboardContent() {
   const [selectedResource, setSelectedResource] = useState<any>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  // Debounce search input to avoid excessive API calls (500ms delay)
   const debouncedSearch = useDebounce(search, 500)
-
-  // Load available accounts on mount (memoized to prevent re-fetching)
-  useEffect(() => {
-    loadAccounts()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const loadAccounts = useCallback(async () => {
     setLoadingAccounts(true)
     try {
-        const accounts = await api.getAccounts()
-        setAvailableAccounts(accounts)
-    } catch (error) {
-      console.error('Failed to load accounts:', error)
-      // If accounts endpoint fails, try to get current account
-      // This allows single-account setups to work
+      const accounts = await api.getAccounts()
+      setAvailableAccounts(accounts)
+    } catch {
       setAvailableAccounts([])
     } finally {
       setLoadingAccounts(false)
     }
   }, [])
 
-  // REMOVED: Duplicate loadInventory - InventoryTable handles this
-  // This was causing duplicate API calls
-
-  const handleResourceClick = (resource: any) => {
-    setSelectedResource(resource)
-    setDrawerOpen(true)
-  }
+  useEffect(() => {
+    loadAccounts()
+  }, [loadAccounts])
 
   return (
-    <Box>
-      <Grid container spacing={3}>
-        {/* Filters */}
-        <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <Grid container spacing={2} alignItems="center">
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth>
-                    <InputLabel>Service</InputLabel>
-                    <Select
-                      value={service}
-                      label="Service"
-                      onChange={(e) => {
-                        setService(e.target.value as ServiceType)
-                      }}
-                    >
-                      {SERVICES.map((s) => (
-                        <MenuItem key={s.value} value={s.value}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            {s.icon}
-                            {s.label}
-                          </Box>
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <FormControl fullWidth>
-                    <InputLabel>Accounts</InputLabel>
-                    <Select
-                      multiple
-                      value={selectedAccounts}
-                      onChange={(e) => {
-                        const value = typeof e.target.value === 'string'
-                          ? e.target.value.split(',')
-                          : e.target.value
-                        setSelectedAccounts(value as string[])
-                      }}
-                      input={<OutlinedInput label="Accounts" />}
-                      renderValue={(selected) => {
-                        if (selected.length === 0) {
-                          return <Typography color="text.secondary" variant="body2">All Accounts</Typography>
-                        }
-                        // Show actual account names, truncated if too many
-                        const selectedAccountsList = selected
-                          .map(id => {
-                            const account = availableAccounts.find(a => a.accountId === id)
-                            return account?.accountName || account?.accountId || id
-                          })
-                          .slice(0, 2) // Show first 2
-
-                        const displayText = selectedAccountsList.join(', ')
-                        const remaining = selected.length - selectedAccountsList.length
-                        return (
-                          <Typography variant="body2" sx={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap'
-                          }}>
-                            {displayText}
-                            {remaining > 0 && ` +${remaining} more`}
-                          </Typography>
-                        )
-                      }}
-                      disabled={loadingAccounts}
-                    >
-                      {loadingAccounts ? (
-                        <MenuItem disabled>
-                          <CircularProgress size={16} sx={{ mr: 1 }} />
-                          Loading accounts...
-                        </MenuItem>
-                      ) : availableAccounts.length > 0 ? (
-                        availableAccounts.map((account) => (
-                          <MenuItem key={account.accountId} value={account.accountId}>
-                            <Checkbox checked={selectedAccounts.indexOf(account.accountId) > -1} />
-                            <ListItemText
-                              primary={account.accountName || account.accountId}
-                              secondary={account.accountId}
-                            />
+    <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', p: 2 }}>
+        <Grid container spacing={3} sx={{ width: '100%', m: 0 }}>
+          {/* Filters */}
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} md={2}>
+                    <FormControl fullWidth>
+                      <InputLabel>Service</InputLabel>
+                      <Select
+                        value={service}
+                        label="Service"
+                        onChange={(e) => setService(e.target.value as ServiceType)}
+                      >
+                        {SERVICES.map((s) => (
+                          <MenuItem key={s.value} value={s.value}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              {s.icon}
+                              {s.label}
+                            </Box>
                           </MenuItem>
-                        ))
-                      ) : (
-                        <MenuItem disabled>
-                          <Typography variant="body2" color="text.secondary">
-                            No accounts available. Using current account.
-                          </Typography>
-                        </MenuItem>
-                      )}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <FormControl fullWidth>
-                    <InputLabel>Regions</InputLabel>
-                    <Select
-                      multiple
-                      value={selectedRegions}
-                      onChange={(e) => {
-                        const value = typeof e.target.value === 'string'
-                          ? e.target.value.split(',')
-                          : e.target.value
-                        setSelectedRegions(value as string[])
-                      }}
-                      input={<OutlinedInput label="Regions" />}
-                      renderValue={(selected) => {
-                        if (selected.length === 0) {
-                          return <Typography color="text.secondary" variant="body2">All Regions</Typography>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+
+                  <Grid item xs={12} md={3}>
+                    <FormControl fullWidth>
+                      <InputLabel>Accounts</InputLabel>
+                      <Select
+                        multiple
+                        value={selectedAccounts}
+                        onChange={(e) =>
+                          setSelectedAccounts(
+                            typeof e.target.value === 'string'
+                              ? e.target.value.split(',')
+                              : (e.target.value as string[])
+                          )
                         }
-                        // Show actual region names, truncated if too many
-                        const selectedRegionsList = selected.slice(0, 2) // Show first 2
-                        const displayText = selectedRegionsList.join(', ')
-                        const remaining = selected.length - selectedRegionsList.length
-                        return (
-                          <Typography variant="body2" sx={{
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap'
-                          }}>
-                            {displayText}
-                            {remaining > 0 && ` +${remaining} more`}
-                          </Typography>
-                        )
-                      }}
-                    >
-                      {AWS_REGIONS.map((region) => (
-                        <MenuItem key={region} value={region}>
-                          <Checkbox checked={selectedRegions.indexOf(region) > -1} />
-                          <ListItemText primary={region} />
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-                <Grid item xs={12} md={4}>
-                  <TextField
-                    fullWidth
-                    label="Search"
-                    value={search}
-                    onChange={(e) => {
-                      setSearch(e.target.value)
-                    }}
-                    placeholder="Search resources..."
-                  />
-                </Grid>
-              </Grid>
-              {/* Selected filters display */}
-              {(selectedAccounts.length > 0 || selectedRegions.length > 0) && (
-                <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {selectedAccounts.length > 0 && (
-                    <Chip
-                      label={
-                        <Box>
-                          <Typography variant="caption" fontWeight="bold">Accounts:</Typography>{' '}
-                          {selectedAccounts
-                            .map(id => {
-                              const account = availableAccounts.find(a => a.accountId === id)
-                              return account?.accountName || account?.accountId || id
-                            })
+                        input={<OutlinedInput label="Accounts" />}
+                        renderValue={(selected) => {
+                          if (selected.length === 0) {
+                            return <Typography color="text.secondary">All Accounts</Typography>
+                          }
+                          const names = selected
+                            .map(id => availableAccounts.find(a => a.accountId === id)?.accountName || id)
                             .slice(0, 2)
-                            .join(', ')}
-                          {selectedAccounts.length > 2 && ` +${selectedAccounts.length - 2}`}
-                        </Box>
-                      }
-                      onDelete={() => setSelectedAccounts([])}
-                      color="primary"
-                      variant="outlined"
-                      sx={{ maxWidth: '100%' }}
+                          const remaining = selected.length - names.length
+                          return `${names.join(', ')}${remaining > 0 ? ` +${remaining} more` : ''}`
+                        }}
+                        disabled={loadingAccounts}
+                      >
+                        {loadingAccounts ? (
+                          <MenuItem disabled>
+                            <CircularProgress size={16} sx={{ mr: 1 }} />
+                            Loading accounts...
+                          </MenuItem>
+                        ) : (
+                          availableAccounts.map((a) => (
+                            <MenuItem key={a.accountId} value={a.accountId}>
+                              <Checkbox checked={selectedAccounts.includes(a.accountId)} />
+                              <ListItemText primary={a.accountName || a.accountId} secondary={a.accountId} />
+                            </MenuItem>
+                          ))
+                        )}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+
+                  <Grid item xs={12} md={3}>
+                    <FormControl fullWidth>
+                      <InputLabel>Regions</InputLabel>
+                      <Select
+                        multiple
+                        value={selectedRegions}
+                        onChange={(e) =>
+                          setSelectedRegions(
+                            typeof e.target.value === 'string'
+                              ? e.target.value.split(',')
+                              : (e.target.value as string[])
+                          )
+                        }
+                        input={<OutlinedInput label="Regions" />}
+                        renderValue={(selected) => {
+                          if (selected.length === 0) {
+                            return <Typography color="text.secondary">All Regions</Typography>
+                          }
+                          const shown = selected.slice(0, 2)
+                          const remaining = selected.length - shown.length
+                          return `${shown.join(', ')}${remaining > 0 ? ` +${remaining} more` : ''}`
+                        }}
+                      >
+                        {AWS_REGIONS.map((r) => (
+                          <MenuItem key={r} value={r}>
+                            <Checkbox checked={selectedRegions.includes(r)} />
+                            <ListItemText primary={r} />
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+
+                  <Grid item xs={12} md={4}>
+                    <TextField
+                      fullWidth
+                      label="Search"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
                     />
-                  )}
-                  {selectedRegions.length > 0 && (
-                    <Chip
-                      label={
-                        <Box>
-                          <Typography variant="caption" fontWeight="bold">Regions:</Typography>{' '}
-                          {selectedRegions.slice(0, 2).join(', ')}
-                          {selectedRegions.length > 2 && ` +${selectedRegions.length - 2}`}
-                        </Box>
-                      }
-                      onDelete={() => setSelectedRegions([])}
-                      color="primary"
-                      variant="outlined"
-                      sx={{ maxWidth: '100%' }}
-                    />
-                  )}
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12}>
+            <SummaryCards service={service} accounts={selectedAccounts} regions={selectedRegions} />
+          </Grid>
+
+          <Grid item xs={12}>
+            <Card>
+              <CardContent sx={{ p: 0, overflow: 'hidden' }}>
+                <Box sx={{ width: '100%', overflowX: 'auto' }}>
+                  <InventoryTable
+                    service={service}
+                    search={debouncedSearch}
+                    accounts={selectedAccounts}
+                    regions={selectedRegions}
+                    onResourceClick={(r) => {
+                      setSelectedResource(r)
+                      setDrawerOpen(true)
+                    }}
+                  />
                 </Box>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Grid>
         </Grid>
-
-        {/* Summary Cards */}
-        <Grid item xs={12}>
-          <SummaryCards service={service} accounts={selectedAccounts} regions={selectedRegions} />
-        </Grid>
-
-        {/* Inventory Table */}
-        <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <InventoryTable
-                service={service}
-                onResourceClick={handleResourceClick}
-                search={debouncedSearch}
-                accounts={selectedAccounts}
-                regions={selectedRegions}
-              />
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
+      </Box>
 
       <ResourceDetailDrawer
         open={drawerOpen}
@@ -327,11 +238,13 @@ function DashboardContent() {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="50vh">
-        <CircularProgress />
-      </Box>
-    }>
+    <Suspense
+      fallback={
+        <Box display="flex" justifyContent="center" alignItems="center" height="100vh">
+          <CircularProgress />
+        </Box>
+      }
+    >
       <DashboardContent />
     </Suspense>
   )

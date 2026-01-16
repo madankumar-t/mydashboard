@@ -166,13 +166,23 @@ export default function InventoryTable({
   }
 
   return (
-    <TableContainer component={Paper}>
+    <TableContainer 
+      component={Paper}
+      sx={{
+        width: '100%',
+        maxHeight: 'calc(100vh - 400px)',
+        overflowX: 'auto',
+        overflowY: 'auto',
+        position: 'relative',
+        display: 'block',
+      }}
+    >
       {loading && (
         <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(255,255,255,0.7)', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <CircularProgress />
         </Box>
       )}
-      <Table>
+      <Table sx={{ minWidth: 1200, width: '100%' }}>
         <TableHead>
           <TableRow>
             {columns.map((col) => (
@@ -182,6 +192,8 @@ export default function InventoryTable({
                   fontWeight: 'bold',
                   backgroundColor:
                     col === 'accountId' || col === 'region' ? 'action.hover' : 'inherit',
+                  whiteSpace: 'nowrap',
+                  minWidth: 120,
                 }}
               >
                 {col.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}
@@ -194,7 +206,15 @@ export default function InventoryTable({
           {data.map((row, idx) => (
             <TableRow key={idx} hover>
               {columns.map((col) => (
-                <TableCell key={col}>{renderCell(col, row[col])}</TableCell>
+                <TableCell 
+                  key={col}
+                  sx={{
+                    whiteSpace: 'nowrap',
+                    minWidth: 120,
+                  }}
+                >
+                  {renderCell(col, row[col])}
+                </TableCell>
               ))}
               <TableCell>
                 <Tooltip title="View Details">
