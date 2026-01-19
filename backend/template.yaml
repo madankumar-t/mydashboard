@@ -212,3 +212,10 @@ Outputs:
   CognitoUserPoolArn:
     Description: Cognito User Pool ARN
     Value: !Sub arn:aws:cognito-idp:${CognitoRegion}:${AWS::AccountId}:userpool/${ExistingCognitoUserPoolId}
+
+  InventoryFunctionRoleInfo:
+    Description: |
+      To find the Lambda execution role ARN for member account trust policies, run:
+      aws iam list-roles --query 'Roles[?contains(RoleName, `InventoryFunction`)].Arn' --output text
+      Or check the IAM console for roles containing "InventoryFunction" in the name.
+    Value: !Sub 'Find role ARN: aws iam list-roles --query "Roles[?contains(RoleName, \`InventoryFunction\`)].Arn" --output text'

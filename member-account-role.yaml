@@ -1,0 +1,148 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: IAM Role for AWS Inventory Dashboard - Member Account
+
+Parameters:
+  MainAccountId:
+    Type: String
+    Description: Main account ID where Lambda function is deployed
+    AllowedPattern: '^[0-9]{12}$'
+  
+  LambdaExecutionRoleName:
+    Type: String
+    Description: Name of the Lambda execution role in main account (e.g., aws-inventory-dashboard-InventoryFunctionRole-XXXXXXXX). Leave empty to use account root.
+    Default: ''
+  
+  ExternalId:
+    Type: String
+    Description: External ID for additional security (optional, leave empty if not using)
+    Default: ''
+    NoEcho: true
+
+  RoleName:
+    Type: String
+    Description: Name of the role to create (must match InventoryRoleName in main account)
+    Default: InventoryReadRole
+
+Resources:
+  InventoryReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Allows AWS Inventory Dashboard to read resources in this account
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !If
+                - UseSpecificRole
+                - !Sub 'arn:aws:iam::${MainAccountId}:role/${LambdaExecutionRoleName}'
+                - !Sub 'arn:aws:iam::${MainAccountId}:root'
+            Action: sts:AssumeRole
+            Condition: !If
+              - UseExternalId
+              - StringEquals:
+                  sts:ExternalId: !Ref ExternalId
+              - !Ref AWS::NoValue
+      ManagedPolicyArns: []
+      Policies:
+        - PolicyName: InventoryReadPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: EC2ReadAccess
+                Effect: Allow
+                Action:
+                  - ec2:Describe*
+                  - ec2:GetConsoleOutput
+                  - ec2:GetConsoleScreenshot
+                Resource: '*'
+              - Sid: S3ReadAccess
+                Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                  - s3:GetBucketLocation
+                  - s3:GetBucketVersioning
+                  - s3:GetBucketAcl
+                  - s3:GetBucketPolicy
+                  - s3:GetBucketEncryption
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:GetBucketTagging
+                  - s3:ListBucket
+                Resource: '*'
+              - Sid: RDSReadAccess
+                Effect: Allow
+                Action:
+                  - rds:Describe*
+                  - rds:ListTagsForResource
+                Resource: '*'
+              - Sid: DynamoDBReadAccess
+                Effect: Allow
+                Action:
+                  - dynamodb:ListTables
+                  - dynamodb:DescribeTable
+                  - dynamodb:ListTagsOfResource
+                Resource: '*'
+              - Sid: IAMReadAccess
+                Effect: Allow
+                Action:
+                  - iam:ListRoles
+                  - iam:GetRole
+                  - iam:GetRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRoleTags
+                Resource: '*'
+              - Sid: VPCReadAccess
+                Effect: Allow
+                Action:
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeNatGateways
+                  - ec2:DescribeRouteTables
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeNetworkAcls
+                  - ec2:DescribeVpcPeeringConnections
+                Resource: '*'
+              - Sid: EKSReadAccess
+                Effect: Allow
+                Action:
+                  - eks:ListClusters
+                  - eks:DescribeCluster
+                  - eks:ListNodegroups
+                  - eks:DescribeNodegroup
+                  - eks:ListTagsForResource
+                Resource: '*'
+              - Sid: ECSReadAccess
+                Effect: Allow
+                Action:
+                  - ecs:ListClusters
+                  - ecs:DescribeClusters
+                  - ecs:ListServices
+                  - ecs:DescribeServices
+                  - ecs:ListTasks
+                  - ecs:DescribeTasks
+                  - ecs:ListTaskDefinitions
+                  - ecs:DescribeTaskDefinitions
+                Resource: '*'
+              - Sid: STSReadAccess
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                Resource: '*'
+
+Conditions:
+  UseExternalId: !Not [!Equals [!Ref ExternalId, '']]
+  UseSpecificRole: !Not [!Equals [!Ref LambdaExecutionRoleName, '']]
+
+Outputs:
+  RoleArn:
+    Description: ARN of the created role
+    Value: !GetAtt InventoryReadRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-InventoryReadRoleArn'
+  
+  RoleName:
+    Description: Name of the created role
+    Value: !Ref InventoryReadRole
+
