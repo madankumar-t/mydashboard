@@ -188,6 +188,42 @@ class InventoryAPI {
     return res.data;
   }
 
+  /* -------------------- Refresh -------------------- */
+
+  async refreshInventory(
+    service?: ServiceType,
+    accounts?: string[]
+  ): Promise<{
+    message: string;
+    service?: string;
+  }> {
+    const params: Record<string, string> = {};
+
+    if (service) params.service = service;
+    if (accounts?.length) params.accounts = accounts.join(',');
+
+    const res = await this.client.post('/inventory/refresh', null, { params });
+    
+    // Clear cache after refresh
+    this.clearCache();
+    
+    return res.data;
+  }
+
+  /* -------------------- Metadata -------------------- */
+
+  async getMetadata(service?: ServiceType): Promise<{
+    lastUpdate: string | null;
+    service?: string;
+  }> {
+    const params: Record<string, string> = {};
+
+    if (service) params.service = service;
+
+    const res = await this.client.get('/inventory/metadata', { params });
+    return res.data;
+  }
+
   /* -------------------- Cache control -------------------- */
 
   clearCache(pattern?: string): void {

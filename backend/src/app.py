@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from utils.response import success_response, error_response, cors_preflight
 from utils.auth import extract_groups_from_claims, can_access_service
 from utils.aws_client import client_manager, AWSClientManager
+from utils.dynamodb_storage import storage
 from collectors import COLLECTORS
 
 
@@ -76,7 +77,7 @@ def collect_inventory(
     search: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
-    Collect inventory across multiple accounts and regions
+    Collect inventory from DynamoDB (instead of directly from AWS)
     
     Args:
         service: Service name (e.g., 'ec2', 's3')
@@ -93,73 +94,28 @@ def collect_inventory(
     collector_class = COLLECTORS[service]
     collector = collector_class()
     
-    all_resources = []
+    # Get account IDs from accounts list, or None to get all
+    account_ids = None
+    if accounts:
+        account_ids = [acc.get('accountId') for acc in accounts if acc.get('accountId')]
     
-    # If no accounts specified, use current account
-    if not accounts:
-        # Get current account ID
-        try:
-            sts = boto3.client('sts', region_name='us-east-1')
-            current_account = sts.get_caller_identity()
-            current_account_id = current_account['Account']
-            accounts = [{'accountId': current_account_id, 'roleArn': None}]
-            print(f"Using current account: {current_account_id}")
-        except Exception as e:
-            print(f"Failed to get current account ID: {str(e)}")
-            accounts = [{'accountId': None, 'roleArn': None}]
-    
-    # Collect from each account
-    for account in accounts:
-        account_id = account.get('accountId')
-        role_arn = account.get('roleArn')
+    # Get resources from DynamoDB
+    try:
+        all_resources = storage.get_resources(
+            service=service,
+            account_ids=account_ids,
+            regions=regions if regions else None
+        )
         
-        try:
-            # Get clients for all regions
-            clients = client_manager.get_clients_for_regions(
-                service,
-                regions,
-                account_id,
-                role_arn
-            )
-            
-            if not clients:
-                print(f"Warning: No clients created for account {account_id}, service {service}")
-                continue
-            
-            # Collect resources from all regions
-            resources = collector.collect_multi_region(clients, regions, account_id)
-        except Exception as e:
-            print(f"Error collecting from account {account_id}: {str(e)}")
-            # Continue with other accounts even if one fails
-            continue
+        # Filter by search term if provided
+        if search:
+            all_resources = collector.filter_resources(all_resources, search)
         
-        # Ensure account_id and region are present in all resources
-        for resource in resources:
-            # Always add region if not present
-            if 'region' not in resource:
-                # Try to get from first available region in the list
-                resource['region'] = regions[0] if regions else 'unknown'
-            
-            # Always add account_id if not present
-            if 'accountId' not in resource:
-                if account_id:
-                    resource['accountId'] = account_id
-                else:
-                    # Fallback: try to get current account
-                    try:
-                        sts = boto3.client('sts', region_name='us-east-1')
-                        current_account = sts.get_caller_identity()
-                        resource['accountId'] = current_account['Account']
-                    except Exception:
-                        resource['accountId'] = 'unknown'
-        
-        all_resources.extend(resources)
-    
-    # Filter by search term if provided
-    if search:
-        all_resources = collector.filter_resources(all_resources, search)
-    
-    return all_resources
+        return all_resources
+    except Exception as e:
+        print(f"Error reading from DynamoDB: {str(e)}")
+        # Fallback: return empty list if DynamoDB read fails
+        return []
 
 
 def validate_service(service: str) -> bool:
@@ -220,6 +176,50 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 return success_response({"accounts": accounts})
             except Exception as e:
                 return error_response("Failed to list accounts", 500, str(e))
+        
+        if path.endswith("/refresh"):
+            # Trigger refresh of inventory data
+            service = params.get("service", "").lower()
+            accounts_param = params.get("accounts", "")
+            
+            # This endpoint will invoke the refresh Lambda function
+            # For now, return a message indicating refresh was triggered
+            try:
+                import boto3
+                lambda_client = boto3.client('lambda')
+                refresh_function_name = os.environ.get('REFRESH_FUNCTION_NAME', 'aws-inventory-dashboard-RefreshFunction')
+                
+                # Invoke refresh function asynchronously
+                payload = {
+                    'service': service if service else None,
+                    'accounts': accounts_param.split(',') if accounts_param else None
+                }
+                
+                lambda_client.invoke(
+                    FunctionName=refresh_function_name,
+                    InvocationType='Event',  # Async invocation
+                    Payload=json.dumps(payload)
+                )
+                
+                return success_response({
+                    "message": "Refresh triggered",
+                    "service": service if service else "all services"
+                })
+            except Exception as e:
+                print(f"Error triggering refresh: {str(e)}")
+                return error_response("Failed to trigger refresh", 500, str(e))
+        
+        if path.endswith("/metadata"):
+            # Get metadata (last update time, etc.)
+            service = params.get("service", "").lower() or None
+            try:
+                last_update = storage.get_last_update_time(service)
+                return success_response({
+                    "lastUpdate": last_update.isoformat() if last_update else None,
+                    "service": service
+                })
+            except Exception as e:
+                return error_response("Failed to get metadata", 500, str(e))
         
         if path.endswith("/summary"):
             # Get summary statistics

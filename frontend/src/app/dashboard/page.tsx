@@ -18,6 +18,10 @@ import {
   OutlinedInput,
   Checkbox,
   ListItemText,
+  Button,
+  Alert,
+  Snackbar,
+  Chip,
 } from '@mui/material'
 import {
   Cloud,
@@ -26,6 +30,8 @@ import {
   Security,
   NetworkCheck,
   Apps,
+  Refresh,
+  Schedule,
 } from '@mui/icons-material'
 import { ServiceType } from '@/types'
 import { api } from '@/lib/api'
@@ -64,6 +70,13 @@ function DashboardContent() {
   const [search, setSearch] = useState('')
   const [selectedResource, setSelectedResource] = useState<any>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null)
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+    open: false,
+    message: '',
+    severity: 'success',
+  })
 
   const debouncedSearch = useDebounce(search, 500)
 
@@ -83,6 +96,44 @@ function DashboardContent() {
     loadAccounts()
   }, [loadAccounts])
 
+  useEffect(() => {
+    loadMetadata()
+  }, [service, loadMetadata])
+
+  const loadMetadata = useCallback(async () => {
+    try {
+      const metadata = await api.getMetadata(service)
+      setLastUpdate(metadata.lastUpdate || null)
+    } catch {
+      // Ignore errors
+    }
+  }, [service])
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      await api.refreshInventory(service, selectedAccounts.length > 0 ? selectedAccounts : undefined)
+      setSnackbar({
+        open: true,
+        message: 'Refresh triggered successfully. Data will be updated shortly.',
+        severity: 'success',
+      })
+      // Reload metadata after a delay
+      setTimeout(() => {
+        loadMetadata()
+        api.clearCache()
+      }, 2000)
+    } catch (error) {
+      setSnackbar({
+        open: true,
+        message: 'Failed to trigger refresh. Please try again.',
+        severity: 'error',
+      })
+    } finally {
+      setRefreshing(false)
+    }
+  }, [service, selectedAccounts, loadMetadata])
+
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', p: 2 }}>
@@ -92,6 +143,29 @@ function DashboardContent() {
             <Card>
               <CardContent>
                 <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {lastUpdate && (
+                          <Chip
+                            icon={<Schedule />}
+                            label={`Last updated: ${new Date(lastUpdate).toLocaleString()}`}
+                            size="small"
+                            variant="outlined"
+                          />
+                        )}
+                      </Box>
+                      <Button
+                        variant="contained"
+                        color="primary"
+                        startIcon={refreshing ? <CircularProgress size={16} /> : <Refresh />}
+                        onClick={handleRefresh}
+                        disabled={refreshing}
+                      >
+                        {refreshing ? 'Refreshing...' : 'Refresh Data'}
+                      </Button>
+                    </Box>
+                  </Grid>
                   <Grid item xs={12} md={2}>
                     <FormControl fullWidth>
                       <InputLabel>Service</InputLabel>
@@ -232,6 +306,21 @@ function DashboardContent() {
         resource={selectedResource}
         service={service}
       />
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }

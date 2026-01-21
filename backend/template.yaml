@@ -79,28 +79,26 @@ Resources:
       CodeUri: src/
       Layers:
         - !Ref PythonDependenciesLayer
-
+      Environment:
+        Variables:
+          INVENTORY_TABLE_NAME: !Ref InventoryTable
+          METADATA_TABLE_NAME: !Ref MetadataTable
+          REFRESH_FUNCTION_NAME: !Ref RefreshFunction
       Policies:
         - Statement:
             - Effect: Allow
               Action:
-                - ec2:Describe*
-                - s3:ListAllMyBuckets
-                - s3:GetBucket*
-                - rds:Describe*
-                - dynamodb:ListTables
-                - dynamodb:DescribeTable
-                - iam:ListRoles
-                - iam:GetRole*
-                - eks:List*
-                - eks:Describe*
-                - ecs:List*
-                - ecs:Describe*
-                - organizations:List*
-                - organizations:Describe*
-                - sts:AssumeRole
-                - sts:GetCallerIdentity
-              Resource: "*"
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:GetItem
+                - dynamodb:BatchGetItem
+              Resource:
+                - !GetAtt InventoryTable.Arn
+                - !GetAtt MetadataTable.Arn
+            - Effect: Allow
+              Action:
+                - lambda:InvokeFunction
+              Resource: !GetAtt RefreshFunction.Arn
 
       Events:
         InventoryApi:
@@ -148,6 +146,142 @@ Resources:
             Auth:
               Authorizer: CognitoAuth
 
+        InventoryRefreshApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /inventory/refresh
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuth
+
+        InventoryMetadataApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref InventoryApi
+            Path: /inventory/metadata
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuth
+
+  ########################################
+  # REFRESH LAMBDA FUNCTION
+  ########################################
+  RefreshFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: refresh_handler.lambda_handler
+      CodeUri: src/
+      Layers:
+        - !Ref PythonDependenciesLayer
+      Timeout: 900  # 15 minutes for large collections
+      MemorySize: 1024
+      Environment:
+        Variables:
+          INVENTORY_TABLE_NAME: !Ref InventoryTable
+          METADATA_TABLE_NAME: !Ref MetadataTable
+          INVENTORY_ROLE_NAME: !Ref InventoryRoleName
+          EXTERNAL_ID: !Ref ExternalId
+          ROLE_SESSION_NAME: InventoryDashboardSession
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ec2:Describe*
+                - s3:ListAllMyBuckets
+                - s3:GetBucket*
+                - rds:Describe*
+                - dynamodb:ListTables
+                - dynamodb:DescribeTable
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:BatchWriteItem
+                - iam:ListRoles
+                - iam:GetRole*
+                - eks:List*
+                - eks:Describe*
+                - ecs:List*
+                - ecs:Describe*
+                - organizations:List*
+                - organizations:Describe*
+                - sts:AssumeRole
+                - sts:GetCallerIdentity
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:DeleteItem
+                - dynamodb:Query
+                - dynamodb:Scan
+                - dynamodb:BatchWriteItem
+              Resource:
+                - !GetAtt InventoryTable.Arn
+                - !GetAtt MetadataTable.Arn
+      Events:
+        ScheduledRefresh:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 2 * * ? *)  # Daily at 2 AM UTC
+            Description: Daily inventory refresh
+            Enabled: true
+
+  ########################################
+  # DYNAMODB TABLES
+  ########################################
+  InventoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: aws-inventory-data
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        Enabled: true
+        AttributeName: ttl
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+
+  MetadataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: aws-inventory-metadata
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: service
+          AttributeType: S
+        - AttributeName: accountId
+          AttributeType: S
+        - AttributeName: region
+          AttributeType: S
+        - AttributeName: accountRegion
+          AttributeType: S
+      KeySchema:
+        - AttributeName: service
+          KeyType: HASH
+        - AttributeName: accountRegion
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: accountId-index
+          KeySchema:
+            - AttributeName: accountId
+              KeyType: HASH
+            - AttributeName: region
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
   ########################################
   # LAMBDA LAYER
   ########################################
@@ -185,12 +319,18 @@ Resources:
         gatewayresponse.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
 
   ########################################
-  # CLOUDWATCH LOG GROUP
+  # CLOUDWATCH LOG GROUPS
   ########################################
   InventoryLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/lambda/${InventoryFunction}
+      RetentionInDays: 30
+
+  RefreshLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${RefreshFunction}
       RetentionInDays: 30
 
 ########################################
@@ -219,3 +359,11 @@ Outputs:
       aws iam list-roles --query 'Roles[?contains(RoleName, `InventoryFunction`)].Arn' --output text
       Or check the IAM console for roles containing "InventoryFunction" in the name.
     Value: !Sub 'Find role ARN: aws iam list-roles --query "Roles[?contains(RoleName, \`InventoryFunction\`)].Arn" --output text'
+
+  InventoryTableName:
+    Description: DynamoDB table name for inventory data
+    Value: !Ref InventoryTable
+
+  MetadataTableName:
+    Description: DynamoDB table name for metadata
+    Value: !Ref MetadataTable
